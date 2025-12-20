@@ -21,6 +21,8 @@ use std::cmp::min;
 const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// ## OK `1st`
+/// ### constructor
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     deps: DepsMut,
@@ -28,27 +30,35 @@ pub fn instantiate(
     _info: MessageInfo,
     msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
-    set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
+    set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?; //e migration tracking per version
+                                                                          //e validate, save and persist config
     let config = Config::new(deps.api, msg.clone())?;
     config.validate()?;
     config.save(deps.storage)?;
+    //e initialize the deposit and debt pools
     State::init(deps.storage, &env)?;
+    //e create the namespace for receipt tokens (upon minting) (e.g. x/ghost-vault/btc)
     let rcpt = TokenFactory::new(&env, format!("ghost-vault/{}", config.denom).as_str());
 
     Ok(Response::default().add_message(rcpt.create_msg(msg.receipt)))
 }
 
+//e user facing methods
 #[cfg_attr(not(feature = "library"), entry_point)]
+/// (owner.clone(),contract.clone(),&ExecuteMsg::Deposit { callback: None },&coins(1_000u128, "btc"),)
 pub fn execute(
     deps: DepsMut,
     env: Env,
     info: MessageInfo,
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
+    //e update the state with accrued interest - invariant
     let config = Config::load(deps.storage)?;
     let mut state = State::load(deps.storage)?;
-    let rcpt = TokenFactory::new(&env, format!("ghost-vault/{}", config.denom).as_str());
+    let rcpt = TokenFactory::new(&env, format!("ghost-vault/{}", config.denom).as_str());+
+    //e accrue interest based on time -> increase deposit_pool.size() by interest -> increase debt_pool.size() by interest+fee -> last updated = now
     let fees = state.distribute_interest(&env, &config)?;
+    //e depends on the msg you send (what you wanna do)
     let mut response = match msg {
         ExecuteMsg::Deposit { callback } => {
             let amount = must_pay(&info, config.denom.as_str())?;

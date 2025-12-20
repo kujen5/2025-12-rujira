@@ -1,0 +1,15 @@
+/home/kujen/blockchain/code4rena/2025-12-rujira/target/debug/deps/rujira_ghost_vault-85911209db0ff3e7: contracts/rujira-ghost-vault/src/lib.rs contracts/rujira-ghost-vault/src/borrowers.rs contracts/rujira-ghost-vault/src/config.rs contracts/rujira-ghost-vault/src/contract.rs contracts/rujira-ghost-vault/src/error.rs contracts/rujira-ghost-vault/src/events.rs contracts/rujira-ghost-vault/src/state.rs contracts/rujira-ghost-vault/src/mock.rs
+
+/home/kujen/blockchain/code4rena/2025-12-rujira/target/debug/deps/rujira_ghost_vault-85911209db0ff3e7.d: contracts/rujira-ghost-vault/src/lib.rs contracts/rujira-ghost-vault/src/borrowers.rs contracts/rujira-ghost-vault/src/config.rs contracts/rujira-ghost-vault/src/contract.rs contracts/rujira-ghost-vault/src/error.rs contracts/rujira-ghost-vault/src/events.rs contracts/rujira-ghost-vault/src/state.rs contracts/rujira-ghost-vault/src/mock.rs
+
+contracts/rujira-ghost-vault/src/lib.rs:
+contracts/rujira-ghost-vault/src/borrowers.rs:
+contracts/rujira-ghost-vault/src/config.rs:
+contracts/rujira-ghost-vault/src/contract.rs:
+contracts/rujira-ghost-vault/src/error.rs:
+contracts/rujira-ghost-vault/src/events.rs:
+contracts/rujira-ghost-vault/src/state.rs:
+contracts/rujira-ghost-vault/src/mock.rs:
+
+# env-dep:CARGO_PKG_NAME=rujira-ghost-vault
+# env-dep:CARGO_PKG_VERSION=1.0.3
