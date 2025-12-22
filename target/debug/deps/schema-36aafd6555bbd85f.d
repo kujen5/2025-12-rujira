@@ -1,6 +1,6 @@
-/home/kujen/blockchain/code4rena/2025-12-rujira/target/debug/deps/libschema-36aafd6555bbd85f.rmeta: contracts/rujira-ghost-vault/src/bin/schema.rs
+/home/kujen/Blockchain/Code4rena/2025-12-rujira/target/debug/deps/libschema-36aafd6555bbd85f.rmeta: contracts/rujira-ghost-vault/src/bin/schema.rs
 
-/home/kujen/blockchain/code4rena/2025-12-rujira/target/debug/deps/schema-36aafd6555bbd85f.d: contracts/rujira-ghost-vault/src/bin/schema.rs
+/home/kujen/Blockchain/Code4rena/2025-12-rujira/target/debug/deps/schema-36aafd6555bbd85f.d: contracts/rujira-ghost-vault/src/bin/schema.rs
 
 contracts/rujira-ghost-vault/src/bin/schema.rs:
 

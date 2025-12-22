@@ -1,6 +1,6 @@
-/home/kujen/blockchain/code4rena/2025-12-rujira/target/debug/deps/librujira_template-3ac529bca7fb325f.rmeta: contracts/rujira-template/src/lib.rs contracts/rujira-template/src/config.rs contracts/rujira-template/src/contract.rs contracts/rujira-template/src/error.rs
+/home/kujen/Blockchain/Code4rena/2025-12-rujira/target/debug/deps/librujira_template-3ac529bca7fb325f.rmeta: contracts/rujira-template/src/lib.rs contracts/rujira-template/src/config.rs contracts/rujira-template/src/contract.rs contracts/rujira-template/src/error.rs
 
-/home/kujen/blockchain/code4rena/2025-12-rujira/target/debug/deps/rujira_template-3ac529bca7fb325f.d: contracts/rujira-template/src/lib.rs contracts/rujira-template/src/config.rs contracts/rujira-template/src/contract.rs contracts/rujira-template/src/error.rs
+/home/kujen/Blockchain/Code4rena/2025-12-rujira/target/debug/deps/rujira_template-3ac529bca7fb325f.d: contracts/rujira-template/src/lib.rs contracts/rujira-template/src/config.rs contracts/rujira-template/src/contract.rs contracts/rujira-template/src/error.rs
 
 contracts/rujira-template/src/lib.rs:
 contracts/rujira-template/src/config.rs:
