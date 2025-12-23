@@ -107,9 +107,26 @@ dist
 target/
 **/target/
 
-# Cargo
-Cargo.lock
-
 # OS junk
 .DS_Store
 Thumbs.db
+
+# CosmWasm build artifacts
+artifacts/
+*.wasm
+
+# Coverage output
+lcov.info
+
+# Local test transactions
+tx.json
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local config overrides
+config.local.toml
+
