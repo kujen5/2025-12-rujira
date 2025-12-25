@@ -61,15 +61,34 @@ pub fn execute(
     //e depends on the msg you send (what you wanna do)
     let mut response = match msg {
         ExecuteMsg::Deposit { callback } => {
+            //e payment validation (check denom and that amount > 0)
             let amount = must_pay(&info, config.denom.as_str())?;
+            //e calculate how many receipt tokens to mint and update pool balance
+            //e deposit_pool.total increases
+            /* example
+            deposit_pool.total += 1_000 btc
+            exchange_rate = 1.25
+            mint = 800 receipt tokens
+             */
             let mint = state.deposit(amount)?;
+            //e vault accounting reflects the deposit
             state.save(deps.storage)?;
 
             match callback {
                 None => Response::default()
+                //e mint receipt token message
+                /*
+                MsgMint {
+                    denom: "ghost-vault/btc",
+                    amount: mint,
+                    to: user
+                }
+                */
                     .add_message(rcpt.mint_msg(mint, info.sender.clone()))
                     .add_event(event_deposit(info.sender, amount, mint)),
+                //e mint receipt token then forward to callback
                 Some(cb) => Response::default()
+                //e Receipt tokens minted to the contract, Callback message executes => Callback receives tokens as funds
                     .add_message(rcpt.mint_msg(mint, env.contract.address))
                     .add_message(cb.to_message(
                         &info.sender,

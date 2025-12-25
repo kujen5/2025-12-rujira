@@ -38,6 +38,8 @@ impl TokenFactory {
         .into()
     }
 
+    /// Ok1st | 
+    ///e mints receipt token upon deposit
     pub fn mint_msg(&self, amount: Uint128, recipient: Addr) -> CosmosMsg {
         MsgMintTokens {
             sender: self.env.contract.address.to_string(),
