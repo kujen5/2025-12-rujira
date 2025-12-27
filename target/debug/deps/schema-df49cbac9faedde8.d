@@ -1,6 +1,6 @@
-/home/kujen/Blockchain/Code4rena/2025-12-rujira/target/debug/deps/libschema-df49cbac9faedde8.rmeta: contracts/rujira-mint/src/bin/schema.rs
+/home/kujen/blockchain/code4rena/2025-12-rujira/target/debug/deps/libschema-df49cbac9faedde8.rmeta: contracts/rujira-mint/src/bin/schema.rs
 
-/home/kujen/Blockchain/Code4rena/2025-12-rujira/target/debug/deps/schema-df49cbac9faedde8.d: contracts/rujira-mint/src/bin/schema.rs
+/home/kujen/blockchain/code4rena/2025-12-rujira/target/debug/deps/schema-df49cbac9faedde8.d: contracts/rujira-mint/src/bin/schema.rs
 
 contracts/rujira-mint/src/bin/schema.rs:
 

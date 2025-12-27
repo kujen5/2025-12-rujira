@@ -21,7 +21,7 @@ use std::cmp::min;
 const CONTRACT_NAME: &str = env!("CARGO_PKG_NAME");
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// ## OK `1st`
+///OK1st
 /// ### constructor
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
@@ -60,6 +60,7 @@ pub fn execute(
     let fees = state.distribute_interest(&env, &config)?;
     //e depends on the msg you send (what you wanna do)
     let mut response = match msg {
+        //Ok1st
         ExecuteMsg::Deposit { callback } => {
             //e payment validation (check denom and that amount > 0)
             let amount = must_pay(&info, config.denom.as_str())?;
@@ -76,7 +77,7 @@ pub fn execute(
 
             match callback {
                 None => Response::default()
-                //e mint receipt token message
+                //e mint receipt token message and emit deposit event
                 /*
                 MsgMint {
                     denom: "ghost-vault/btc",
@@ -88,39 +89,52 @@ pub fn execute(
                     .add_event(event_deposit(info.sender, amount, mint)),
                 //e mint receipt token then forward to callback
                 Some(cb) => Response::default()
-                //e Receipt tokens minted to the contract, Callback message executes => Callback receives tokens as funds
+                //e Receipt tokens minted/sent to the contract, Callback message executes and decides what to do next => Callback receives tokens as funds
+                //audit-possible: re-entrancy through callback contract?
                     .add_message(rcpt.mint_msg(mint, env.contract.address))
                     .add_message(cb.to_message(
                         &info.sender,
                         Empty {},
                         coins(mint.u128(), rcpt.denom()),
                     )?)
+                    //e deposit event
                     .add_event(event_deposit(info.sender, amount, mint)),
             }
         }
         ExecuteMsg::Withdraw { callback } => {
+            //e make sure only 1 coin and correct denom obtained from the receipt token
             let amount = must_pay(&info, rcpt.denom().as_str())?;
+            //e calculate how many receipt tokens to withdraw and update pool balance
             let withdrawn = state.withdraw(amount)?;
+            //e commit the state
             state.save(deps.storage)?;
 
             match callback {
+                //e if no callback contract, burn receipt token and emit burn event
                 None => Response::default()
                     .add_message(rcpt.burn_msg(amount))
+                    //e send the underlying assets through BankMsg::Send, passing the receiver address and amount and denom
                     .add_message(BankMsg::Send {
                         to_address: info.sender.to_string(),
                         amount: coins(withdrawn.u128(), config.denom),
                     })
+                    //e emit withdrawal event
                     .add_event(event_withdraw(info.sender, withdrawn, amount)),
+                //e if we have a callback contract address
                 Some(cb) => Response::default()
+                    //e create burn message
                     .add_message(rcpt.burn_msg(amount))
+                    //e send underlying assets through the callback contract, without BankMsg::Send 
                     .add_message(cb.to_message(
                         &info.sender,
                         Empty {},
                         coins(withdrawn.u128(), &config.denom),
                     )?)
+                    //e emit withdrawal event
                     .add_event(event_withdraw(info.sender, withdrawn, amount)),
             }
         }
+        //e borrowing, repaying
         ExecuteMsg::Market(market_msg) => {
             let mut borrower = Borrower::load(deps.storage, info.sender.clone())?;
             execute_market(deps, info, &mut state, market_msg, &mut borrower)?
@@ -140,15 +154,22 @@ pub fn execute_market(
     msg: MarketMsg,
     borrower: &mut Borrower,
 ) -> Result<Response, ContractError> {
+    //e load the protocol configs: denom, LTC, fees, limits
     let config = Config::load(deps.storage)?;
+    //e match the requested action: borrow | repay
     let response = match msg {
+        //e for borrowing, accept the amount to borrow, callback contract and optional third party borrower
         MarketMsg::Borrow {
             amount,
             callback,
             delegate,
         } => {
+            //e calculate the number of shares correpsonding to the requested borrow amount
             let shares = state.borrow(amount)?;
+            //e check if there is delegate address
             match delegate.clone() {
+                //e if delegate address is passed
+                //e assign debt shares to delegate, record delegation relationship
                 Some(d) => {
                     borrower.delegate_borrow(
                         deps.storage,
@@ -157,29 +178,37 @@ pub fn execute_market(
                         shares,
                     )?;
                 }
+                //e if no delegate passed, the borrower borrows for themself
                 None => {
                     borrower.borrow(deps.storage, &state.debt_pool, shares)?;
                 }
             };
-
+            //e check if there is callback contract
             match callback {
+                //e if no callback contract 
                 None => Response::default()
+                    //e create send request to send the borrowed collateral to borrower
                     .add_message(BankMsg::Send {
                         to_address: info.sender.to_string(),
                         amount: coins(amount.u128(), config.denom),
                     })
+                    //e emit borrowing event
                     .add_event(event_borrow(
                         borrower.addr.clone(),
                         delegate,
                         amount,
                         shares,
                     )),
+                //e if there is callback contract
+                //audit-possible maybe reentrancy
                 Some(cb) => Response::default()
+                    //e send the borrowed assets to the borrow contract alongside the sender identity
                     .add_message(cb.to_message(
                         &info.sender,
                         Empty {},
                         coins(amount.u128(), &config.denom),
                     )?)
+                    //e emit borrow event
                     .add_event(event_borrow(
                         borrower.addr.clone(),
                         delegate,
@@ -188,35 +217,44 @@ pub fn execute_market(
                     )),
             }
         }
+        //e if user want to repay
         MarketMsg::Repay { delegate } => {
+            //e make sure denom is correct and only 1 coin
             let amount = must_pay(&info, config.denom.as_str())?;
+            //e validate the delegate address 
             let delegate_address = delegate
                 .clone()
                 .map(|d| deps.api.addr_validate(&d))
                 .transpose()?;
-
+            //e if there is no delegate, the borrower shares are the same he borrowed, else its the delegate shares associated with the delegate obtained from storage
             let borrower_shares = match delegate_address.as_ref() {
                 Some(d) => borrower.delegate_shares(deps.storage, d.clone()),
                 None => borrower.shares,
             };
+            //e calculate the debt he owes: borrower_debt = borrower_shares / total_shares * total_debt
             let borrower_debt = state.debt_pool.ownership(borrower_shares);
+            //e calculate how much to repay, which is minimum between the debt he owes and the amount he borrowed
+            //e If amount > debt → excess refunded later | If amount < debt → partial repayment
             let repay_amount = min(amount, borrower_debt);
-
+            //e convert repayment amount to shares
             let shares = state.repay(repay_amount)?;
-
+            //e check if we have a delegate
             match delegate_address.clone() {
+                //e if we have a delegate, substract shares from his debt and write that to storage
                 Some(d) => borrower.delegate_repay(deps.storage, d, shares),
+                //e else substract from borrower
                 None => borrower.repay(deps.storage, shares),
             }?;
-
+            //e building the response and emit event
             let mut response = Response::default().add_event(event_repay(
                 borrower.addr.clone(),
                 delegate,
                 repay_amount,
                 shares,
             ));
-
+            //e prevent underflow with checked_sub, give back any excess
             let refund = amount.checked_sub(repay_amount)?;
+            //e refund always goes to transaction sender not the delegate
             if !refund.is_zero() {
                 response = response.add_message(BankMsg::Send {
                     to_address: info.sender.to_string(),
@@ -230,18 +268,25 @@ pub fn execute_market(
     Ok(response)
 }
 
+//e privileged entry point
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn sudo(deps: DepsMut, _env: Env, msg: SudoMsg) -> Result<Response, ContractError> {
+    //e load the storage
     let mut config = Config::load(deps.storage)?;
-
+    //e check if we want to set the borrower (update borrow limit) or set the interest
     match msg {
+        //e if we want to update borrower contract, pass limit
         SudoMsg::SetBorrower { contract, limit } => {
+            //e set the new limit to the contract after first validating the address (valid bech32)
             Borrower::set(deps.storage, deps.api.addr_validate(&contract)?, limit)?;
             Ok(Response::default())
         }
+        //e update interest rate model
         SudoMsg::SetInterest(interest) => {
+            //e validate new interest value
             interest.validate()?;
             config.interest = interest;
+            //e save new interest value to storage
             config.save(deps.storage)?;
             Ok(Response::default())
         }
@@ -250,8 +295,10 @@ pub fn sudo(deps: DepsMut, _env: Env, msg: SudoMsg) -> Result<Response, Contract
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, ContractError> {
+    //e load the state and configs from storage
     let mut state = State::load(deps.storage)?;
     let config = Config::load(deps.storage)?;
+    //e ensures the query shows up to date values
     state.distribute_interest(&env, &config)?;
 
     match msg {
