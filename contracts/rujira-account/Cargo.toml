@@ -33,3 +33,5 @@ thiserror       = { workspace = true }
 
 [dev-dependencies]
 cw-multi-test = { workspace = true }
+cosmwasm-std = { version = "1.5", features = ["stargate"] }
+serde_json = "1.0"

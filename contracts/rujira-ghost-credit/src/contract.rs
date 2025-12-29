@@ -30,6 +30,8 @@ const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const REPLY_ID_PREFERENCE: u64 = 0;
 const REPLY_ID_LIQUIDATOR: u64 = 1;
 
+//Ok1st
+//e set the contract version and name, load the configs from the msg and save them to the contract
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     deps: DepsMut,
@@ -44,6 +46,7 @@ pub fn instantiate(
     Ok(Response::default())
 }
 
+//
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn execute(
     deps: DepsMut,

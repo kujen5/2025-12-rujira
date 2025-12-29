@@ -104,7 +104,7 @@ dist
 # TernJS port file
 .tern-port
 # Rust
-target/
+target/*
 **/target/
 
 # OS junk
