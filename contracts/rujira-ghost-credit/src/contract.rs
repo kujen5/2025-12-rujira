@@ -54,9 +54,12 @@ pub fn execute(
     info: MessageInfo,
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
+    //e load the contract config: fees, collateral ratios, etc
     let config = Config::load(deps.storage)?;
+    //e contract address
     let ca = env.contract.address.clone();
     match msg {
+        //e user wants to create a credit account
         ExecuteMsg::Create { salt, label, tag } => {
             let (account, msg) = CreditAccount::create(
                 deps.as_ref(),
@@ -67,28 +70,47 @@ pub fn execute(
                 tag,
                 salt,
             )?;
+            //e save the account 
             account.save(deps)?;
-
+            //e return creation message and emit event
             Ok(Response::default()
                 .add_message(msg)
                 .add_event(event_create_account(&account)))
         }
+        //e liquidator requesting account liquidation
+        //e msgs : HOW to try to liquidate it
+        /* //e validation
+        queue construction
+        scheduling
+        */
         ExecuteMsg::Liquidate { addr, msgs } => {
+            //e load the credit account to be liquidated and validate the address
             let account =
                 CreditAccount::load(deps.as_ref(), &config, &ca, deps.api.addr_validate(&addr)?)?;
+            //e is the account liquidatable?
+            //e health check
+            //e only check before liquidation
             account.check_unsafe(&config.liquidation_threshold)?;
+            //e build liquidation queue
+            //e each message is paired with bool: if `false`, msg came from liquidator
+            //e this affects the reply later
+            //e this transforms msgs: [A, B, C] to queue: [(A, false), (B, false), (C, false)]
             let mut queue: Vec<(LiquidateMsg, bool)> =
                 msgs.iter().map(|x| (x.clone(), false)).collect();
+            //e fix order
             queue.reverse();
+            //e pre-approved liquidation fallback actions defined by account owner, if true=preference
             let mut prefs: Vec<(LiquidateMsg, bool)> = account
                 .liquidation_preferences
                 .messages
                 .iter()
                 .map(|x| (x.clone(), true))
                 .collect();
+            //e Liquidator gets first attempt. Preferences are backup
             prefs.reverse();
             queue.append(&mut prefs);
-
+            //e this is where liquidation actually happens
+            //e we pass the account (who to liquidate), the queue (liquidation steps) and payload (snapshot of the account before liquidation, to ensure liquidation correctness)
             Ok(Response::default()
                 .add_message(
                     ExecuteMsg::DoLiquidate {
@@ -98,27 +120,47 @@ pub fn execute(
                     }
                     .call(&ca)?,
                 )
+                //e emit an event for the execution of liquidation
                 .add_event(event_execute_liquidate(&account, &info.sender)))
         }
+        //e at most one liquidation step per call
+        /*
+        UNSAFE
+         |
+         v
+         [execute step]
+         |
+         v
+        CHECK
+         |
+         ├─ SAFE → STOP
+         ├─ STEPS LEFT → CONTINUE
+         └─ NO STEPS → REVERT
+         */
         ExecuteMsg::DoLiquidate {
             addr,
             mut queue,
             payload,
         } => {
+            //e ONLY the contract cann call this (through the ::Liquidate)
             ensure_eq!(info.sender, ca, ContractError::Unauthorized {});
+            //e get account to be liquidated
             let account =
                 CreditAccount::load(deps.as_ref(), &config, &ca, deps.api.addr_validate(&addr)?)?;
+            //e get account to be liquidated before liquidation (save the state, snapshot)
             let original_account: CreditAccount = from_json(&payload)?;
-
+            //e check chain
             let check = account
                 // Check safe against the liquidation threshold
                 .check_safe(&config.liquidation_threshold)
                 // Check we've not gone below the adjustment threshold
                 .and_then(|_| account.check_unsafe(&config.adjustment_threshold))
                 .and_then(|_| {
+                    //e validate the account against the snapshot
                     account.validate_liquidation(deps.as_ref(), &config, &original_account)
                 });
             match (queue.pop(), check) {
+                //e Account is safe
                 (_, Ok(())) => Ok(Response::default()),
                 (None, Err(err)) => {
                     // We're done and the Account hasn't passed checks. Fail
@@ -126,6 +168,7 @@ pub fn execute(
                 }
                 (Some((msg, is_preference)), Err(_)) => {
                     // Not safe, more messages to go. Continue
+                    //e execute liquidation step
                     Ok(execute_liquidate(
                         deps.as_ref(),
                         env.clone(),
@@ -139,6 +182,7 @@ pub fn execute(
                             REPLY_ID_LIQUIDATOR
                         },
                     )?
+                    //e re-schedule the loop
                     .add_message(
                         ExecuteMsg::DoLiquidate {
                             addr: account.id().to_string(),
@@ -150,12 +194,16 @@ pub fn execute(
                 }
             }
         }
-
+        //e allows the account owner to perform actions: borrow, repay, swap
         ExecuteMsg::Account { addr, msgs } => {
+            //e load the account and validate the address
             let mut account =
                 CreditAccount::load(deps.as_ref(), &config, &ca, deps.api.addr_validate(&addr)?)?;
+            //e make sure the one invoking this is the account owner 
             ensure_eq!(account.owner, info.sender, ContractError::Unauthorized {});
+            //e create an exmpty response to mark the start of the execution
             let mut response = Response::default().add_event(event_execute_account(&account));
+            //e execute each message
             for msg in msgs {
                 let (messages, events) =
                     execute_account(deps.as_ref(), env.clone(), &config, msg, &mut account)?;
@@ -165,6 +213,7 @@ pub fn execute(
 
             Ok(response.add_message(ExecuteMsg::CheckAccount { addr }.call(&ca)?))
         }
+        //e schedule a health check on the account
         ExecuteMsg::CheckAccount { addr } => {
             let account =
                 CreditAccount::load(deps.as_ref(), &config, &ca, deps.api.addr_validate(&addr)?)?;
@@ -181,13 +230,19 @@ pub fn execute_account(
     msg: AccountMsg,
     account: &mut CreditAccount,
 ) -> Result<(Vec<CosmosMsg>, Vec<Event>), ContractError> {
+    //e load delegate account
     let delegate = account.id().to_string();
 
     match msg {
+        //e borrow, repay, execute, send, transfer, ... 
         AccountMsg::Borrow(coin) => {
+            //e loads the borrow vault for that specific denom ('btc' for example)
             let vault = BORROW.load(deps.storage, coin.denom.clone())?;
+
             let msgs = vec![
+                //e borrow from the market
                 vault.market_msg_borrow(Some(delegate.clone()), None, &coin)?,
+                //e move the funds to the account
                 BankMsg::Send {
                     to_address: delegate,
                     amount: vec![coin.clone()],
@@ -196,12 +251,16 @@ pub fn execute_account(
             ];
             Ok((msgs, vec![event_execute_account_borrow(&coin)]))
         }
+        //e repay
         AccountMsg::Repay(coin) => {
+            //e load same vault
             let vault = BORROW.load(deps.storage, coin.denom.clone())?;
+            //e move the funds back to the contract CA
             let msgs = vec![
                 account
                     .account
                     .send(env.contract.address, vec![coin.clone()])?,
+                //e repay the debt
                 vault.market_msg_repay(Some(delegate), &coin)?,
             ];
             Ok((msgs, vec![event_execute_account_repay(&coin)]))

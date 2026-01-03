@@ -71,6 +71,8 @@ impl CreditAccount {
             liquidation_preferences: Default::default(),
         }
     }
+
+    ///Ok1st
     pub fn create(
         deps: Deps,
         code_id: u64,
@@ -81,11 +83,15 @@ impl CreditAccount {
         salt: Binary,
     ) -> Result<(Self, WasmMsg), ContractError> {
         let mut hasher = Sha256::new();
+        //e add owner address to hash
+        //e same salt + different owner → different account
         hasher.update(owner.as_bytes());
+        //e add user supplied salt
         hasher.update(salt.as_slice());
-
+        //e binary -> vec<u8>
         let mut salt = salt.to_vec();
         salt.append(&mut deps.api.addr_canonicalize(owner.as_ref())?.to_vec());
+        //e instatiate the account
         let (account, msg) = Account::create(
             deps,
             admin,
